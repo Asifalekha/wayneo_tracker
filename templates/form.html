@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Route Input</title>
+</head>
+<body>
+    <h2>Enter Start and End Locations</h2>
+    <form method="POST">
+        Start Location: <input type="text" name="start_location" placeholder="e.g. Marina Beach, Chennai"><br>
+        End Location: <input type="text" name="end_location" placeholder="e.g. Anna University, Chennai"><br>
+        <button type="submit">Get Route</button>
+    </form>
+
+    <h3>Share Your Live Location</h3>
+    <button id="share-location">Share My Location</button>
+
+    <script>
+    document.getElementById("share-location").onclick = () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+
+                    fetch("/update_location", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ latitude: lat, longitude: lng })
+                    }).then(res => res.json())
+                      .then(data => alert("Location shared!"));
+                },
+                (error) => { alert("Error getting location"); }
+            );
+        } else {
+            alert("Geolocation is not supported by this browser.");
+        }
+    };
+    </script>
+</body>
+</html>

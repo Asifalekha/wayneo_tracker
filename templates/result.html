@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Crowd Map</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    #map { height: 80vh; width: 100%; }
+    body { margin: 0; padding: 10px; font-family: Arial, sans-serif; }
+    .legend { background: white; padding: 6px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h2>Route & Crowd Visualization</h2>
+  <div id="map"></div>
+  <br>
+  <a href="/">Back</a>
+
+
+<!--   Display the available buses-->
+  <h3>Available Buses</h3>
+<ul>
+  {% for bus in buses %}
+    <li>
+      Bus {{ bus.bus_number }}: {{ bus.start_stop }} → {{ bus.end_stop }}
+      | ETA at your start: {{ bus.eta_min }} min
+    </li>
+  {% else %}
+    <li>No buses cover this route.</li>
+  {% endfor %}
+</ul>
+
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // Data from Flask
+<!--    const routeCoords = {{ route_coords_json | safe }};-->
+<!--    const crowdPoints = {{ crowd_points_json | safe }};-->
+const routeCoords = {{ route_coords_json | tojson }};
+const crowdPoints = {{ crowd_points_json | tojson }};
+
+
+    console.log("Route Coords:", routeCoords);
+    console.log("Crowd Points:", crowdPoints);
+
+    // Create map
+    const map = L.map('map');
+
+    // Add OpenStreetMap tiles
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // Convert routeCoords to LatLngs regardless of format
+    const routeLatLngs = routeCoords
+      .map(p => {
+        if (Array.isArray(p) && p.length >= 2) {
+          return [p[0], p[1]]; // already [lat, lng]
+        } else if (p && typeof p === 'object' && 'lat' in p && 'lng' in p) {
+          return [p.lat, p.lng];
+        }
+        return null;
+      })
+      .filter(Boolean); // remove invalid entries
+
+    // Draw polyline if we have coordinates
+    if (routeLatLngs.length > 0) {
+      const routeLine = L.polyline(routeLatLngs, {color: 'blue', weight: 4, opacity: 0.8}).addTo(map);
+      map.fitBounds(routeLine.getBounds(), {padding: [40, 40]});
+    } else {
+      console.warn("No valid route coordinates found.");
+<!--      map.setView([0, 0], 2); // default world view-->
+  map.setView([13.0827, 80.2707], 12); // Chennai
+    }
+
+    // ✅ Add crowd markers ONLY if people_count > 0
+    if (Array.isArray(crowdPoints) && crowdPoints.length > 0) {
+      crowdPoints.forEach(pt => {
+        if (!pt || typeof pt !== 'object') return;
+        const lat = pt.latitude ?? pt.lat;
+        const lng = pt.longitude ?? pt.lng;
+        const people = pt.people_count || 0;
+
+        if (lat == null || lng == null || people === 0) return; // ✅ Skip if no people
+
+        const stop = pt.stop_name || pt.stop_id || '';
+        const size = Math.min(20, Math.max(6, people * 2)); // size scales with crowd
+
+        const circle = L.circleMarker([lat, lng], {
+          radius: size,
+          color: people >= 20 ? 'darkred' : people >= 10 ? 'orange' : 'green', // ✅ color by density
+          fillColor: people >= 20 ? 'darkred' : people >= 10 ? 'orange' : 'green',
+          fillOpacity: 0.7,
+          weight: 1
+        }).addTo(map);
+
+<!--        circle.bindPopup(<b>${stop}</b><br>People: ${people});-->
+circle.bindPopup(`<b>${stop}</b><br>People: ${people}`);
+
+      });
+    }
+
+
+
+
+
+    // Legend
+    const legend = L.control({position: 'topright'});
+    legend.onAdd = function(map) {
+      const div = L.DomUtil.create('div','legend');
+      div.innerHTML = `<b>Legend</b><br>
+                       <span style="color:green;">●</span> Low (1-9)<br>
+                       <span style="color:orange;">●</span> Medium (10-19)<br>
+                       <span style="color:darkred;">●</span> High (20+)<br>
+                       Blue line = route`;
+      return div;
+    }
+    legend.addTo(map);
+  </script>
+</body>
+</html>

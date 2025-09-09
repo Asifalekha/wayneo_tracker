@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Crowd Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map { height: 80vh; width: 100%; }
+    body { margin: 0; padding: 10px; font-family: Arial, sans-serif; }
+    .legend { background: white; padding: 6px; border-radius: 4px; }
+    .bus-icon { font-size: 28px; width: 28px; height: 28px; text-align: center; line-height: 28px; background: white; border-radius: 50%; border: 1px solid black; }
+  </style>
+</head>
+<body>
+  <h2>Route & Crowd Visualization</h2>
+  <h3>Available Buses</h3>
+  <ul>
+    {% for bus in buses %}
+      <li>Bus {{ bus.bus_number }}: {{ bus.start_stop }} → {{ bus.end_stop }} | ETA: {{ bus.eta_min }} min</li>
+    {% else %}
+      <li>No buses cover this route.</li>
+    {% endfor %}
+  </ul>
+  <div id="map"></div>
+  <br>
+  <a href="/">Back</a>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // --- Data from Flask ---
+    const routeCoords = {{ route_coords_json | safe }};
+    const crowdPoints = {{ crowd_points_json | safe }};
+    const busLocations = {{ bus_positions_json | safe }};
+    const userLocation = {{ user_location_json | safe }};  // your live location
+
+    // --- Initialize map ---
+    const map = L.map('map');
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // --- Draw route ---
+    const routeLatLngs = routeCoords.map(p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lng]).filter(Boolean);
+    if (routeLatLngs.length) {
+      const routeLine = L.polyline(routeLatLngs, {color: 'blue', weight: 4, opacity: 0.8}).addTo(map);
+      map.fitBounds(routeLine.getBounds(), {padding: [40, 40]});
+    } else {
+      map.setView([0,0],2);
+    }
+
+    // --- Crowd points ---
+    crowdPoints.forEach(pt => {
+      if (!pt || !pt.latitude || pt.people_count === 0) return;
+      const size = Math.min(20, Math.max(6, pt.people_count * 2));
+      L.circleMarker([pt.latitude, pt.longitude], {
+        radius: size,
+       color: pt.people_count >= 2 ? 'red' : 'green',
+fillColor: pt.people_count >= 2 ? 'red' : 'green',
+
+        fillOpacity: 0.7,
+        weight: 1
+      }).addTo(map).bindPopup(`People: ${pt.people_count}`);
+    });
+
+    // --- Bus markers ---
+    const busIcon = L.divIcon({className: "bus-icon", html: "🚌", iconSize: [24, 24], iconAnchor: [12,12]});
+    busLocations.forEach(bus => {
+      L.marker([bus.lat, bus.lng], {icon: busIcon}).addTo(map).bindPopup(`Bus ${bus.bus_number} at ${bus.current_stop}`);
+    });
+
+    // --- Your live location ---
+    let userMarker = null;
+    if (userLocation && userLocation.latitude && userLocation.longitude) {
+      userMarker = L.marker([userLocation.latitude, userLocation.longitude], {
+        icon: L.icon({
+          iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
+          iconSize: [32,32]
+        })
+      }).addTo(map).bindPopup("You are here");
+    }
+
+    // --- Live update from /get_live_locations ---
+    async function updateLiveLocations() {
+    const response = await fetch('/get_live_locations');
+    const locations = await response.json();
+
+    if (window.liveMarkers) {
+        window.liveMarkers.forEach(m => map.removeLayer(m));
+    }
+    window.liveMarkers = [];
+
+    locations.forEach(function(loc) {
+        const marker = L.circleMarker([loc.latitude, loc.longitude], {
+            color: "red",   // highlight your live location
+            radius: 8
+        }).addTo(map).bindPopup("You are here");
+        window.liveMarkers.push(marker);
+    });
+}
+
+setInterval(updateLiveLocations, 5000); // refresh every 5s
+updateLiveLocations(); // initial call
+
+
+  </script>
+</body>
+</html>
