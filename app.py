@@ -58,7 +58,9 @@ buses= [
 live_locations = []  # list of {"latitude": ..., "longitude": ...}
 
 
-
+live_locations.append({"latitude": 13.0100, "longitude": 80.2100})
+live_locations.append({"latitude": 13.0120, "longitude": 80.2120})
+live_locations.append({"latitude": 13.0150, "longitude": 80.2150})
 
 def normalize(text):
     return text.lower().replace(" ", "")
@@ -191,7 +193,7 @@ def find_bus(start_location, end_location):
 
 
 ##new crowd
-def match_crowd_data(route_coords, threshold_km=0.05):
+def match_crowd_data(route_coords, threshold_km=5.0):
     matched_points = []
     for lat, lng in route_coords:
         # Only count users within `threshold_km` of this route point
