@@ -172,22 +172,41 @@ def find_bus(start_location, end_location):
 
 
 # --- Match crowd along route ---
-def match_crowd_data(route_coords):
+# def match_crowd_data(route_coords):
+#     matched_points = []
+#     for lat, lng in route_coords:
+#         # count number of live users within 0.05 km (~50 meters)
+#         people = sum(
+#             1 for loc in live_locations if haversine(lat, lng, loc["latitude"], loc["longitude"]) < 1.8
+#         )
+#         dots = math.ceil(people / 1)  # 1 dot per person
+#         matched_points.append({
+#             "latitude": float(lat),
+#             "longitude": float(lng),
+#             "people_count": people,
+#             "dots": int(dots)
+#         })
+#     return matched_points
+#
+
+
+##new crowd
+def match_crowd_data(route_coords, threshold_km=0.05):
     matched_points = []
     for lat, lng in route_coords:
-        # count number of live users within 0.05 km (~50 meters)
+        # Only count users within `threshold_km` of this route point
         people = sum(
-            1 for loc in live_locations if haversine(lat, lng, loc["latitude"], loc["longitude"]) < 1.8
+            1 for loc in live_locations
+            if haversine(lat, lng, loc["latitude"], loc["longitude"]) <= threshold_km
         )
-        dots = math.ceil(people / 1)  # 1 dot per person
-        matched_points.append({
-            "latitude": float(lat),
-            "longitude": float(lng),
-            "people_count": people,
-            "dots": int(dots)
-        })
+        if people > 0:  # Only add points where someone is actually present
+            matched_points.append({
+                "latitude": float(lat),
+                "longitude": float(lng),
+                "people_count": people,
+                "dots": people
+            })
     return matched_points
-
 
 # --- Home page: enter start/end locations ---
 @app.route("/", methods=["GET", "POST"])
