@@ -193,7 +193,7 @@ def find_bus(start_location, end_location):
 
 
 ##new crowd
-def match_crowd_data(route_coords, threshold_km=5.0):
+def match_crowd_data(route_coords, threshold_km=0.8):
     matched_points = []
     for lat, lng in route_coords:
         # Only count users within `threshold_km` of this route point
