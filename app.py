@@ -270,5 +270,13 @@ def update_location():
     return jsonify({"status": "error", "message": "Invalid data"}), 400
 
 
+#new change
+
+@app.route("/get_locations", methods=["GET"])
+def get_locations():
+    print(live_locations)
+    return jsonify(live_locations)
+
+
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
