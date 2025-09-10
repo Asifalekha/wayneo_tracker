@@ -58,9 +58,9 @@ buses= [
 live_locations = []  # list of {"latitude": ..., "longitude": ...}
 
 
-live_locations.append({"latitude": 13.0100, "longitude": 80.2100})
-live_locations.append({"latitude": 13.0120, "longitude": 80.2120})
-live_locations.append({"latitude": 13.0150, "longitude": 80.2150})
+# live_locations.append({"latitude": 13.0100, "longitude": 80.2100})
+# live_locations.append({"latitude": 13.0120, "longitude": 80.2120})
+# live_locations.append({"latitude": 13.0150, "longitude": 80.2150})
 
 def normalize(text):
     return text.lower().replace(" ", "")
