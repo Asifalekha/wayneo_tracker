@@ -306,7 +306,11 @@ def update_location():
     return jsonify({"status": "error", "message": "Invalid data"}), 400
 @app.route("/get_locations", methods=["GET"])
 def get_locations():
-    return jsonify(list(live_locations.values()))
+    return jsonify([
+        {"user_id": uid, "latitude": loc["latitude"], "longitude": loc["longitude"]}
+        for uid, loc in live_locations.items()
+    ])
+
 
 
 if __name__ == "__main__":
