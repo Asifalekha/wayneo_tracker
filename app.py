@@ -55,7 +55,7 @@ buses= [
 
 
 # In-memory store for live user locations
-live_locations = []  # list of {"latitude": ..., "longitude": ...}
+live_locations = {}  # list of {"latitude": ..., "longitude": ...}
 
 
 # live_locations.append({"latitude": 13.0100, "longitude": 80.2100})
@@ -259,23 +259,41 @@ def get_route():
     })
 
 # --- Endpoint to receive live user locations ---
+# @app.route("/update_location", methods=["POST"])
+# def update_location():
+#     data = request.get_json()
+#     lat = data.get("latitude")
+#     lng = data.get("longitude")
+#     if lat is not None and lng is not None:
+#         live_locations.append({"latitude": lat, "longitude": lng})
+#         return jsonify({"status": "success"})
+#     return jsonify({"status": "error", "message": "Invalid data"}), 400
+#
+#
+# #new change
+#
+# @app.route("/get_locations", methods=["GET"])
+# def get_locations():
+#     print(live_locations)
+#     return jsonify(live_locations)
+
+
 @app.route("/update_location", methods=["POST"])
 def update_location():
     data = request.get_json()
+    user_id = data.get("user_id")
     lat = data.get("latitude")
     lng = data.get("longitude")
-    if lat is not None and lng is not None:
-        live_locations.append({"latitude": lat, "longitude": lng})
+
+    if user_id and lat is not None and lng is not None:
+        # overwrite the location for this user_id
+        live_locations[usecr_id] = {"latitude": lat, "longitude": lng}
         return jsonify({"status": "success"})
+
     return jsonify({"status": "error", "message": "Invalid data"}), 400
-
-
-#new change
-
 @app.route("/get_locations", methods=["GET"])
 def get_locations():
-    print(live_locations)
-    return jsonify(live_locations)
+    return jsonify(list(live_locations.values()))
 
 
 if __name__ == "__main__":
