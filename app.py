@@ -367,15 +367,17 @@
 
 
 
-from flask import Flask, request, jsonify, render_template
-import threading, time, math, requests, json
+from flask import Flask, request, jsonify
 from flask_cors import CORS
+import threading, time, math, requests
 
 app = Flask(__name__)
 CORS(app)
 
+# -------------------------
 # Bus dataset
-buses= [
+# -------------------------
+buses = [
     {
         "bus_number": "19B",
         "start_stop": "Kelambakkam",
@@ -398,9 +400,15 @@ buses= [
     }
 ]
 
+# -------------------------
+# Live data
+# -------------------------
 live_locations = {}  # {"user_id": {"latitude": ..., "longitude": ...}}
-live_buses = {}      # {"bus_number": {"lat": ..., "lng": ..., "route_coords": [...], "idx": 0}}
+live_buses = {}      # {"bus_number": {"lat": ..., "lng": ..., "route_coords": [...], "idx": 0, "eta_to_user_start": ...}}
 
+# -------------------------
+# Helper functions
+# -------------------------
 def normalize(text):
     return text.lower().replace(" ", "")
 
@@ -419,7 +427,7 @@ def find_bus(start_location, end_location):
             start_idx = [i for i, s in enumerate(stops) if stop_matches(start_location, [s])][0]
             end_idx = [i for i, s in enumerate(stops) if stop_matches(end_location, [s])][0]
             if start_idx < end_idx:
-                eta = (end_idx - start_idx) * 5
+                eta = (end_idx - start_idx) * 5  # ETA in minutes
                 available.append({
                     "bus_number": bus["bus_number"],
                     "start_stop": bus["start_stop"],
@@ -429,61 +437,39 @@ def find_bus(start_location, end_location):
     return available
 
 def geocode(location_name):
-    viewbox = "80.17,12.95,80.35,13.15"
-    url = "https://nominatim.openstreetmap.org/search"
-    params = {
-        "q": f"{location_name}, Chennai, Tamil Nadu, India",
-        "format": "json",
-        "limit": 1,
-        "bounded": 1,
-        "viewbox": viewbox
-    }
-    headers = {"User-Agent": "WayneoApp/1.0"}
-    res = requests.get(url, params=params, headers=headers)
-    res.raise_for_status()
-    data = res.json()
-    if not data: return None, None
-    lat = float(data[0]["lat"])
-    lng = float(data[0]["lon"])
-    return lat, lng
+    try:
+        viewbox = "80.17,12.95,80.35,13.15"
+        url = "https://nominatim.openstreetmap.org/search"
+        params = {
+            "q": f"{location_name}, Chennai, Tamil Nadu, India",
+            "format": "json",
+            "limit": 1,
+            "bounded": 1,
+            "viewbox": viewbox
+        }
+        headers = {"User-Agent": "WayneoApp/1.0"}
+        res = requests.get(url, params=params, headers=headers, timeout=5)
+        res.raise_for_status()
+        data = res.json()
+        if not data:
+            return None, None
+        lat = float(data[0]["lat"])
+        lng = float(data[0]["lon"])
+        return lat, lng
+    except:
+        return None, None
 
 def get_route_from_osrm(start_lat, start_lng, end_lat, end_lng):
-    url = f"https://router.project-osrm.org/route/v1/driving/{start_lng},{start_lat};{end_lng},{end_lat}?overview=full&geometries=geojson"
-    res = requests.get(url)
-    res.raise_for_status()
-    coords = res.json()["routes"][0]["geometry"]["coordinates"]
-    return [(lat, lng) for lng, lat in coords]
-
-def initialize_buses_on_route(user_start, user_end):
-    """
-    Initialize buses along their own routes, starting from bus's start_stop.
-    """
-    buses_on_route = find_bus(user_start, user_end)
-    for bus in buses_on_route:
-        # Find bus object
-        bus_obj = next((b for b in buses if b["bus_number"] == bus["bus_number"]), None)
-        if not bus_obj:
-            continue
-
-        # Geocode bus actual start and end stops
-        start_lat, start_lng = geocode(bus_obj["start_stop"])
-        end_lat, end_lng = geocode(bus_obj["end_stop"])
-        route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
-
-        # Find index of user_start in bus route
-        user_start_lat, user_start_lng = geocode(user_start)
-        closest_idx = min(range(len(route_coords)),
-                          key=lambda i: haversine(user_start_lat, user_start_lng,
-                                                  route_coords[i][0], route_coords[i][1]))
-        eta_min = (len(route_coords) - closest_idx) * 0.1  # Example: each point ~6 sec
-
-        live_buses[bus["bus_number"]] = {
-            "route_coords": route_coords,
-            "idx": 0,  # Start from bus's start_stop
-            "lat": route_coords[0][0],
-            "lng": route_coords[0][1],
-            "eta_to_user_start": round(eta_min, 1)  # send ETA for display
-        }
+    if None in (start_lat, start_lng, end_lat, end_lng):
+        return []
+    try:
+        url = f"https://router.project-osrm.org/route/v1/driving/{start_lng},{start_lat};{end_lng},{end_lat}?overview=full&geometries=geojson"
+        res = requests.get(url, timeout=5)
+        res.raise_for_status()
+        coords = res.json()["routes"][0]["geometry"]["coordinates"]
+        return [(lat, lng) for lng, lat in coords]
+    except:
+        return []
 
 def haversine(lat1, lng1, lat2, lng2):
     R = 6371
@@ -504,6 +490,45 @@ def match_crowd_data(route_coords, threshold_km=0.5):
             crowd_points.append({"latitude": lat, "longitude": lng, "count": people})
     return crowd_points
 
+def initialize_buses_on_route(user_start, user_end):
+    """
+    Initialize buses along their own routes, starting from bus's start_stop.
+    """
+    buses_on_route = find_bus(user_start, user_end)
+    for bus in buses_on_route:
+        # Find bus object
+        bus_obj = next((b for b in buses if b["bus_number"] == bus["bus_number"]), None)
+        if not bus_obj:
+            continue
+
+        # Geocode bus start & end stops
+        start_lat, start_lng = geocode(bus_obj["start_stop"])
+        end_lat, end_lng = geocode(bus_obj["end_stop"])
+        if None in (start_lat, start_lng, end_lat, end_lng):
+            continue
+
+        route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
+        if not route_coords:
+            continue
+
+        # Geocode user start to calculate ETA
+        user_start_lat, user_start_lng = geocode(user_start)
+        if user_start_lat is None:
+            eta_min = 0
+        else:
+            closest_idx = min(range(len(route_coords)),
+                              key=lambda i: haversine(user_start_lat, user_start_lng,
+                                                      route_coords[i][0], route_coords[i][1]))
+            eta_min = (len(route_coords) - closest_idx) * 0.1
+
+        live_buses[bus["bus_number"]] = {
+            "route_coords": route_coords,
+            "idx": 0,
+            "lat": route_coords[0][0],
+            "lng": route_coords[0][1],
+            "eta_to_user_start": round(eta_min, 1)
+        }
+
 def move_buses():
     while True:
         for bus_number, bus in live_buses.items():
@@ -514,23 +539,9 @@ def move_buses():
                 bus["idx"] = 0
         time.sleep(2)
 
-# @app.route("/get_route", methods=["POST"])
-# def get_route():
-#     data = request.get_json()
-#     src = data.get("start_location")
-#     dest = data.get("end_location")
-#     start_lat, start_lng = geocode(src)
-#     end_lat, end_lng = geocode(dest)
-#     if start_lat is None or end_lat is None:
-#         return jsonify({"error": "Invalid location"}), 400
-#     route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
-#     crowd_points = match_crowd_data(route_coords)
-#     available_buses = find_bus(src, dest)
-#     initialize_buses_on_route(src, dest)
-#     return jsonify({"route": route_coords, "crowd": crowd_points, "buses": available_buses})
-
-
-##now changed
+# -------------------------
+# Flask routes
+# -------------------------
 @app.route("/get_route", methods=["POST"])
 def get_route():
     data = request.get_json()
@@ -538,7 +549,7 @@ def get_route():
     dest = data.get("end_location")
     start_lat, start_lng = geocode(src)
     end_lat, end_lng = geocode(dest)
-    if start_lat is None or end_lat is None:
+    if None in (start_lat, start_lng, end_lat, end_lng):
         return jsonify({"error": "Invalid location"}), 400
 
     route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
@@ -546,7 +557,7 @@ def get_route():
     available_buses = find_bus(src, dest)
     initialize_buses_on_route(src, dest)
 
-    # Attach ETA from live_buses
+    # Attach ETA
     for b in available_buses:
         bus_live = live_buses.get(b["bus_number"])
         if bus_live:
@@ -574,6 +585,9 @@ def get_locations():
     return jsonify([{"user_id": uid, "latitude": loc["latitude"], "longitude": loc["longitude"]}
                     for uid, loc in live_locations.items()])
 
+# -------------------------
+# Main
+# -------------------------
 if __name__ == "__main__":
     threading.Thread(target=move_buses, daemon=True).start()
     app.run(host="0.0.0.0", port=5000, debug=True)
