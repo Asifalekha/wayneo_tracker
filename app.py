@@ -454,17 +454,35 @@ def get_route_from_osrm(start_lat, start_lng, end_lat, end_lng):
     coords = res.json()["routes"][0]["geometry"]["coordinates"]
     return [(lat, lng) for lng, lat in coords]
 
-def initialize_buses_on_route(start_location, end_location):
-    buses_on_route = find_bus(start_location, end_location)
+def initialize_buses_on_route(user_start, user_end):
+    """
+    Initialize buses along their own routes, starting from bus's start_stop.
+    """
+    buses_on_route = find_bus(user_start, user_end)
     for bus in buses_on_route:
-        start_lat, start_lng = geocode(start_location)
-        end_lat, end_lng = geocode(end_location)
+        # Find bus object
+        bus_obj = next((b for b in buses if b["bus_number"] == bus["bus_number"]), None)
+        if not bus_obj:
+            continue
+
+        # Geocode bus actual start and end stops
+        start_lat, start_lng = geocode(bus_obj["start_stop"])
+        end_lat, end_lng = geocode(bus_obj["end_stop"])
         route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
+
+        # Find index of user_start in bus route
+        user_start_lat, user_start_lng = geocode(user_start)
+        closest_idx = min(range(len(route_coords)),
+                          key=lambda i: haversine(user_start_lat, user_start_lng,
+                                                  route_coords[i][0], route_coords[i][1]))
+        eta_min = (len(route_coords) - closest_idx) * 0.1  # Example: each point ~6 sec
+
         live_buses[bus["bus_number"]] = {
             "route_coords": route_coords,
-            "idx": 0,
+            "idx": 0,  # Start from bus's start_stop
             "lat": route_coords[0][0],
-            "lng": route_coords[0][1]
+            "lng": route_coords[0][1],
+            "eta_to_user_start": round(eta_min, 1)  # send ETA for display
         }
 
 def haversine(lat1, lng1, lat2, lng2):
@@ -496,6 +514,23 @@ def move_buses():
                 bus["idx"] = 0
         time.sleep(2)
 
+# @app.route("/get_route", methods=["POST"])
+# def get_route():
+#     data = request.get_json()
+#     src = data.get("start_location")
+#     dest = data.get("end_location")
+#     start_lat, start_lng = geocode(src)
+#     end_lat, end_lng = geocode(dest)
+#     if start_lat is None or end_lat is None:
+#         return jsonify({"error": "Invalid location"}), 400
+#     route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
+#     crowd_points = match_crowd_data(route_coords)
+#     available_buses = find_bus(src, dest)
+#     initialize_buses_on_route(src, dest)
+#     return jsonify({"route": route_coords, "crowd": crowd_points, "buses": available_buses})
+
+
+##now changed
 @app.route("/get_route", methods=["POST"])
 def get_route():
     data = request.get_json()
@@ -505,10 +540,18 @@ def get_route():
     end_lat, end_lng = geocode(dest)
     if start_lat is None or end_lat is None:
         return jsonify({"error": "Invalid location"}), 400
+
     route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
     crowd_points = match_crowd_data(route_coords)
     available_buses = find_bus(src, dest)
     initialize_buses_on_route(src, dest)
+
+    # Attach ETA from live_buses
+    for b in available_buses:
+        bus_live = live_buses.get(b["bus_number"])
+        if bus_live:
+            b["eta_min"] = bus_live["eta_to_user_start"]
+
     return jsonify({"route": route_coords, "crowd": crowd_points, "buses": available_buses})
 
 @app.route("/get_buses", methods=["GET"])
