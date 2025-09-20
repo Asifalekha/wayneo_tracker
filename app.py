@@ -3,6 +3,8 @@ import json
 from flask_cors import CORS
 import requests
 import math
+import threading
+import time
 
 app = Flask(__name__)
 CORS(app)
@@ -56,6 +58,8 @@ buses= [
 
 # In-memory store for live user locations
 live_locations = {}  # list of {"latitude": ..., "longitude": ...}
+# In-memory store for buses
+live_buses = {}  # {"bus_number": {"lat": ..., "lng": ..., "route_coords": [...], "idx": 0}}
 
 
 # live_locations.append({"latitude": 13.0100, "longitude": 80.2100})
@@ -64,7 +68,17 @@ live_locations = {}  # list of {"latitude": ..., "longitude": ...}
 
 def normalize(text):
     return text.lower().replace(" ", "")
-
+def move_buses():
+    while True:
+        for bus_number, bus in live_buses.items():
+            # Move along the route
+            if bus["idx"] < len(bus["route_coords"]) - 1:
+                bus["idx"] += 1
+                bus["lat"], bus["lng"] = bus["route_coords"][bus["idx"]]
+            else:
+                # Optionally loop or reset
+                bus["idx"] = 0
+        time.sleep(2)  # Update every 2 seconds
 
 @app.route('/set_route', methods=['POST'])
 def set_route():
@@ -82,6 +96,22 @@ def stop_matches(user_stop, stop_list):
         if user_norm in normalize(s) or normalize(s) in user_norm:
             return True
     return False
+
+
+def initialize_buses_on_route(start_location, end_location):
+    buses_on_route = find_bus(start_location, end_location)
+    for bus in buses_on_route:
+        # Get route coordinates for this bus
+        start_lat, start_lng = geocode(start_location)
+        end_lat, end_lng = geocode(end_location)
+        route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
+
+        live_buses[bus["bus_number"]] = {
+            "route_coords": route_coords,
+            "idx": 0,
+            "lat": route_coords[0][0],
+            "lng": route_coords[0][1]
+        }
 
 
 # --- Geocoding function: location name -> coordinates ---
@@ -248,7 +278,16 @@ def index():
             buses=available_buses
         )
     return render_template("form.html")
-
+@app.route("/get_buses", methods=["GET"])
+def get_buses():
+    return jsonify([
+        {
+            "bus_number": bus_number,
+            "latitude": bus["lat"],
+            "longitude": bus["lng"]
+        }
+        for bus_number, bus in live_buses.items()
+    ])
 @app.route("/get_route", methods=["POST"])
 def get_route():
     data = request.get_json()
@@ -264,6 +303,7 @@ def get_route():
     route_coords = get_route_from_osrm(start_lat, start_lng, end_lat, end_lng)
     crowd_points = match_crowd_data(route_coords)
     available_buses = find_bus(start_location, end_location)
+    initialize_buses_on_route(start_location, end_location)
 
     return jsonify({
         "route": route_coords,
@@ -314,4 +354,5 @@ def get_locations():
 
 
 if __name__ == "__main__":
+    threading.Thread(target=move_buses, daemon=True).start()
     app.run(host="0.0.0.0", port=5000, debug=True)
