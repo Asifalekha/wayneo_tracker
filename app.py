@@ -378,51 +378,74 @@ import bcrypt
 app = Flask(__name__)
 CORS(app)
 
-# -------------------- DB Config --------------------
-db_config = {
-    "host": "localhost",
-    "user": "root",       # change to your MySQL user
-    "password": "root123",   # change to your MySQL password
-    "database": "bus_app" # make sure this DB exists
-}
+# app.py
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
 
+app = Flask(__name__)
+CORS(app)  # Allow Flutter app to access API
+
+DB_NAME = "users.db"
 
 def get_db_connection():
-    conn = sqlite3.connect('users.db')  # creates file users.db
+    conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
     return conn
 
+# ---------------- Register ----------------
 @app.route('/register', methods=['POST'])
 def register():
     data = request.json
-    username = data['username']
-    password = data['password']
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Enter both fields"}), 400
+
+    hashed_password = generate_password_hash(password)
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
-    cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-    conn.commit()
-    conn.close()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT
+        )
+    """)
+    try:
+        cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                       (username, hashed_password))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"error": "Username already exists"}), 409
 
+    conn.close()
     return jsonify({"message": "User registered successfully"}), 201
 
+# ---------------- Login ----------------
 @app.route('/login', methods=['POST'])
 def login():
     data = request.json
-    username = data['username']
-    password = data['password']
+    username = data.get('username')
+    password = data.get('password')
+
+    if not username or not password:
+        return jsonify({"error": "Enter both fields"}), 400
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
     user = cursor.fetchone()
     conn.close()
 
-    if user:
+    if user and check_password_hash(user['password'], password):
         return jsonify({"message": "Login successful"}), 200
     else:
-        return jsonify({"message": "Invalid credentials"}), 401
+        return jsonify({"error": "Invalid credentials"}), 401
 # -------------------------
 # Bus dataset
 # -------------------------
