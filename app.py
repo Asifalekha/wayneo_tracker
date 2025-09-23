@@ -367,12 +367,70 @@
 
 
 
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import threading, time, math, requests
+import mysql.connector
+import bcrypt
+
 
 app = Flask(__name__)
 CORS(app)
+
+# -------------------- DB Config --------------------
+db_config = {
+    "host": "localhost",
+    "user": "root",       # change to your MySQL user
+    "password": "root123",   # change to your MySQL password
+    "database": "bus_app" # make sure this DB exists
+}
+
+
+def get_db_connection():
+    return mysql.connector.connect(**db_config)
+
+# -------------------- Register --------------------
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "Username and password required"}), 400
+
+    hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)",
+                       (username, hashed_pw))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "User registered successfully"}), 201
+    except mysql.connector.IntegrityError:
+        return jsonify({"error": "Username already exists"}), 400
+
+# -------------------- Login --------------------
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get("username")
+    password = data.get("password")
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password FROM users WHERE username = %s", (username,))
+    row = cursor.fetchone()
+    conn.close()
+
+    if row and bcrypt.checkpw(password.encode("utf-8"), row[0].encode("utf-8")):
+        return jsonify({"message": "Login successful"})
+    else:
+        return jsonify({"error": "Invalid username or password"}), 401
+
 
 # -------------------------
 # Bus dataset
