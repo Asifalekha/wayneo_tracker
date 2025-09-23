@@ -371,7 +371,7 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import threading, time, math, requests
-import mysql.connector
+import sqlite3
 import bcrypt
 
 
@@ -388,50 +388,41 @@ db_config = {
 
 
 def get_db_connection():
-    return mysql.connector.connect(**db_config)
+    conn = sqlite3.connect('users.db')  # creates file users.db
+    conn.row_factory = sqlite3.Row
+    return conn
 
-# -------------------- Register --------------------
-@app.route("/register", methods=["POST"])
+@app.route('/register', methods=['POST'])
 def register():
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
-
-    if not username or not password:
-        return jsonify({"error": "Username and password required"}), 400
-
-    hashed_pw = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
-
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)",
-                       (username, hashed_pw))
-        conn.commit()
-        conn.close()
-        return jsonify({"message": "User registered successfully"}), 201
-    except mysql.connector.IntegrityError:
-        return jsonify({"error": "Username already exists"}), 400
-
-# -------------------- Login --------------------
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
+    data = request.json
+    username = data['username']
+    password = data['password']
 
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT password FROM users WHERE username = %s", (username,))
-    row = cursor.fetchone()
+    cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, username TEXT, password TEXT)")
+    cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
+    conn.commit()
     conn.close()
 
-    if row and bcrypt.checkpw(password.encode("utf-8"), row[0].encode("utf-8")):
-        return jsonify({"message": "Login successful"})
+    return jsonify({"message": "User registered successfully"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.json
+    username = data['username']
+    password = data['password']
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
+    user = cursor.fetchone()
+    conn.close()
+
+    if user:
+        return jsonify({"message": "Login successful"}), 200
     else:
-        return jsonify({"error": "Invalid username or password"}), 401
-
-
+        return jsonify({"message": "Invalid credentials"}), 401
 # -------------------------
 # Bus dataset
 # -------------------------
